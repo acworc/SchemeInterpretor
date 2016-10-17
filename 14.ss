@@ -604,7 +604,7 @@
       [(newline) (display "didn't know we needed this!")]
       [(map)
        (map (lambda (arg)
-	      (apply-prim-proc (2nd (1st args)) (list arg)))
+	      (apply-proc (1st args) (list arg)))
 	      (2nd args))]
       [(apply) (apply (eval (2nd (1st args))) (2nd args))]
       [(=) (= (1st args) (2nd args))]
