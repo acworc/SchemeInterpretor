@@ -131,10 +131,10 @@
   [improper-closure (vars (list-of symbol?))
                     (var symbol?)
                     (bodies (list-of expression?))
-                    (env environment)]
+                    (env environment?)]
   [variable-closure (var symbol?)
                     (bodies (list-of expression?))
-                    (env environment)])	 
+                    (env environment?)])	 
 
 
 ;-------------------+
@@ -603,7 +603,9 @@
       [(display) (display "didn't know we needed this!")]
       [(newline) (display "didn't know we needed this!")]
       [(map)
-       (map (eval (2nd (1st args))) (2nd args))]
+       (map (lambda (arg)
+	      (apply-prim-proc (2nd (1st args)) (list arg)))
+	      (2nd args))]
       [(apply) (apply (eval (2nd (1st args))) (2nd args))]
       [(=) (= (1st args) (2nd args))]
       [else (error 'apply-prim-proc 
