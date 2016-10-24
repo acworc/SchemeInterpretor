@@ -115,7 +115,8 @@
    (bodies (list-of expression?))]
   [letrec-exp
    (proc-names (list-of symbol?))
-   (idss (list-of (list-of symbol?)))
+   (fixed-idss (list-of (list-of symbol?)))
+   (variable-idss (list-of (list-of symbol?)))
    (bodiess (list-of (list-of expression?)))
    (letrec-bodies (list-of expression?))]
   [namedlet-exp
@@ -168,7 +169,8 @@
    (env environment?)]
   [recursively-extended-env-record
 	(proc-names (list-of symbol?))
-	(idss (list-of (list-of symbol?)))
+	(fixed-idss (list-of (list-of symbol?)))
+	(variable-idss (list-of (list-of symbol?)))
 	(bodiess (list-of (list-of expression?)))
 	(env environment?)])
   
@@ -359,13 +361,16 @@
 	  (eopl:error 'parse-exp "vars in ~s-exp must be symbols ~s" datum)]
 	 
 	 [else
+
 	  (if (null? (3rd datum))
 	  	  (letrec-exp (list (2nd datum))
+	  	  			  '()
 	  	  			  '()
 	  	  			  (list (map parse-exp (cdddr datum)))
 	  	  			  (list (parse-exp (list (2nd datum)))))
 	      (letrec-exp (list (2nd datum)) 
 	      			  (list (map 1st (3rd datum))) 
+	      			  '(())
 	      			  (list (map parse-exp (cdddr datum))) 
 	  				  (list (parse-exp (cons (2nd datum) 
 	  				  			(map 2nd (3rd datum)))))))])]
@@ -408,10 +413,30 @@
 	       '()
 	       '()
 	       '()
+	       '()
 	       (map parse-exp (cddr datum)))
 	      (letrec-exp
 	       (map 1st (2nd datum))
-	       (map 2nd (map 2nd (2nd datum)))
+	       (map (lambda (lambda-exp)
+	       			(cond
+	       				[(symbol? (2nd lambda-exp))
+	       					'()]
+	       				[(and (not (null? (2nd lambda-exp))) 
+	       					  (improper? (2nd lambda-exp)))
+	       					(get-fixed (2nd lambda-exp))]
+	       				[else
+	       					(2nd lambda-exp)]))
+	       	 	(map 2nd (2nd datum)))
+	       (map (lambda (lambda-exp)
+	       			(cond
+	       				[(symbol? (2nd lambda-exp))
+	       					(list (2nd lambda-exp))]
+	       				[(and (not (null? (2nd lambda-exp))) 
+	       					  (improper? (2nd lambda-exp)))
+	       					(list (get-variable (2nd lambda-exp)))]
+	       				[else
+	       					'()]))
+	       	 	(map 2nd (2nd datum)))
 	       (map (lambda (ls-exp) 
 	       			(map parse-exp ls-exp))
 	       		 (map cddr (map 2nd (2nd datum))))
@@ -487,9 +512,9 @@
     (empty-env-record)))
 
 (define extend-env-recursively
-	(lambda (proc-names idss bodiess old-env)
+	(lambda (proc-names fixed-idss variable-idss bodiess old-env)
 	(recursively-extended-env-record
-	proc-names idss bodiess old-env)))
+	proc-names fixed-idss variable-idss bodiess old-env)))
 
 (define extend-env
   (lambda (syms vals env)
@@ -520,13 +545,24 @@
 				      (succeed (list-ref vals pos))
 				      (apply-env env sym succeed fail)))]
 	   [recursively-extended-env-record
-			(proc-names idss bodiess old-env)
+			(proc-names fixed-idss variable-idss bodiess old-env)
 			(let ([pos
 				(list-find-position sym proc-names)])
 				(if (number? pos)
-					(closure (list-ref idss pos)
-						(list-ref bodiess pos)
-						env)
+					(let ([fixed-vars (list-ref fixed-idss pos)]
+						  [variable-vars (list-ref variable-idss pos)]
+						  [bodies (list-ref bodiess pos)])
+						(cond
+							[(and (null? fixed-vars) 
+								  (not (null? variable-vars)))
+								(variable-closure (car variable-vars) bodies env)]
+							[(and (not (null? fixed-vars))
+								  (not (null? variable-vars)))
+								(improper-closure fixed-vars (car variable-vars) bodies env)]
+							[else
+								(closure fixed-vars
+									bodies
+									env)]))
 			(apply-env old-env sym succeed fail)))])))
 
 
@@ -546,7 +582,7 @@
 			    (app-exp (lambda-fixed-exp vars
 			    				  (map syntax-expand bodies))
 			    		  (map syntax-expand exps))]
-			[letrec-exp (proc-names idss bodiess letrec-bodies)
+			[letrec-exp (proc-names fixed-idss variable-idss bodiess letrec-bodies)
 				(identity-proc exp)]
 			[lit-exp (datum) exp]
 	        [var-exp (id) (identity-proc exp)]
@@ -632,10 +668,10 @@
 						 env)])
 			(eval-bodies bodies new-env))]
 		 [letrec-exp
-		 	(proc-names idss bodiess letrec-bodies)
+		 	(proc-names fixed-idss variable-idss bodiess letrec-bodies)
 		 	(eval-bodies letrec-bodies
 		 		(extend-env-recursively
-		 			proc-names idss bodiess env))]
+		 			proc-names fixed-idss variable-idss bodiess env))]
 	     [if-exp (test-exp then-exp else-exp)
 		     (if (eval-exp test-exp env)
 			 (eval-exp then-exp env)
