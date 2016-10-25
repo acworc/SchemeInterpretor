@@ -57,25 +57,25 @@
 	  (cons (car pair) (get-fixed (cdr pair))))))
 
 (define exp-has-else
-	(lambda (x)
-	(ormap (lambda (condition)
-				(equal? (car condition) 'else)) x)))
+  (lambda (x)
+    (ormap (lambda (condition)
+	     (equal? (car condition) 'else)) x)))
 
 (define all-but-last
-	(lambda (lst)
-		(if (<= (length lst) 1)
-			'()
-		    (cons (car lst) (all-but-last (cdr lst))))))
+  (lambda (lst)
+    (if (<= (length lst) 1)
+	'()
+	(cons (car lst) (all-but-last (cdr lst))))))
 
 (define last
-	(lambda (ls)
-		(last-helper ls (car ls))))
+  (lambda (ls)
+    (last-helper ls (car ls))))
 
 (define last-helper
-	(lambda (ls ch)
-		(if (null? ls)
-			ch
-			(last-helper (cdr ls) (car ls)))))
+  (lambda (ls ch)
+    (if (null? ls)
+	ch
+	(last-helper (cdr ls) (car ls)))))
 
 
 ;; parsed expression
@@ -128,30 +128,30 @@
    (id symbol?)
    (exp expression?)]
   [cond-exp
-  	(conditions (list-of expression?))
-  	(exps (list-of expression?))
-  	(else-exp expression?)]
+   (conditions (list-of expression?))
+   (exps (list-of expression?))
+   (else-exp expression?)]
   [cond-no-else-exp
-  	(conditions (list-of expression?))
-  	(exps (list-of expression?))]
+   (conditions (list-of expression?))
+   (exps (list-of expression?))]
   [and-exp
-  	(args (list-of expression?))]
+   (args (list-of expression?))]
   [or-exp
-  	(args (list-of expression?))]
+   (args (list-of expression?))]
   [begin-exp
-  	(exps (list-of expression?))]
+   (exps (list-of expression?))]
   [case-exp
-  	(key expression?)
-  	(keys (list-of expression?))
-  	(bodies (list-of expression?))
-  	(else-exp expression?)]
+   (key expression?)
+   (keys (list-of expression?))
+   (bodies (list-of expression?))
+   (else-exp expression?)]
   [case-no-else-exp
-  	(key expression?)
-  	(keys (list-of expression?))
-  	(bodies (list-of expression?))]
+   (key expression?)
+   (keys (list-of expression?))
+   (bodies (list-of expression?))]
   [while-exp
-  	(test-exp expression?)
-  	(bodies (list-of expression?))])
+   (test-exp expression?)
+   (bodies (list-of expression?))])
 
 
 
@@ -168,12 +168,12 @@
    (vals (list-of scheme-value?))
    (env environment?)]
   [recursively-extended-env-record
-	(proc-names (list-of symbol?))
-	(fixed-idss (list-of (list-of symbol?)))
-	(variable-idss (list-of (list-of symbol?)))
-	(bodiess (list-of (list-of expression?)))
-	(env environment?)])
-  
+   (proc-names (list-of symbol?))
+   (fixed-idss (list-of (list-of symbol?)))
+   (variable-idss (list-of (list-of symbol?)))
+   (bodiess (list-of (list-of expression?)))
+   (env environment?)])
+
 
 ;; datatype for procedures.  At first there is only one
 ;; kind of procedure, but more kinds will be added later.
@@ -227,55 +227,55 @@
 	(eopl:error 'parse-exp "expression ~s is not a proper list" datum)]
        [(quoted? datum) (lit-exp (2nd datum))]
        [else (lit-exp datum)])]
-
+     
      
      ;; all "list" expressions
      [(pair? datum)
       (cond
        [(improper? datum)
 	(eopl:error 'parse-exp "expression ~s is not a proper list" datum)]
+       
+       ;; cond expressions
+       [(equal? (1st datum) 'cond)
+	(let* ([has-else (exp-has-else (cdr datum))]
+	       [conds-and-exps (if has-else
+				   (all-but-last (cdr datum))
+				   (cdr datum))]
+	       [conditions (map parse-exp (map 1st conds-and-exps))]
+	       [exps (map parse-exp (map 2nd conds-and-exps))]
+	       [return (if has-else
+			   (cond-exp conditions exps (parse-exp (2nd (last (cdr datum)))))
+			   (cond-no-else-exp conditions exps))])
+	  return)]
+       
+       ;; and/or expressions
+       [(equal? (1st datum) 'and)
+	(and-exp (map parse-exp (cdr datum)))]
+       
+       [(equal? (1st datum) 'or)
+	(or-exp (map parse-exp (cdr datum)))]
 
-		;cond expressions
-		[(equal? (1st datum) 'cond)
-			(let* ([has-else (exp-has-else (cdr datum))]
-						 [conds-and-exps (if has-else
-						 										 (all-but-last (cdr datum))
-						 										 (cdr datum))]
-						 [conditions (map parse-exp (map 1st conds-and-exps))]
-						 [exps (map parse-exp (map 2nd conds-and-exps))]
-						 [return (if has-else
-						 						(cond-exp conditions exps (parse-exp (2nd (last (cdr datum)))))
-						 						(cond-no-else-exp conditions exps))])
-						 return)]
-
-		;and/or expressions
-		[(equal? (1st datum) 'and)
-			(and-exp (map parse-exp (cdr datum)))]
-
-		[(equal? (1st datum) 'or)
-			(or-exp (map parse-exp (cdr datum)))]
-
-		;begin expression
-		[(equal? (1st datum) 'begin)
-			(begin-exp (map parse-exp (cdr datum)))]
-
-		;while expressions
-		[(equal? (1st datum) 'while)
-			(while-exp (parse-exp (2nd datum)) (map parse-exp (cddr datum)))]
-
-		;case expression
-		[(equal? (1st datum) 'case)
-			(let* ([key (parse-exp (2nd datum))] 
-						 [has-else (exp-has-else (cddr datum))]
-						 [keys-and-exps (if has-else
-						 										 (all-but-last (cddr datum))
-						 										 (cddr datum))]
-						 [keys (list (parse-exp (list 'quote(map 1st keys-and-exps))))]
-						 [bodies (map parse-exp (map 2nd keys-and-exps))]
-						 [return (if has-else
-						 						(case-exp key keys bodies (parse-exp (2nd (last (cddr datum)))))
-						 						(case-no-else-exp key keys bodies))])
-						 return)]
+       ;; begin expression
+       [(equal? (1st datum) 'begin)
+	(begin-exp (map parse-exp (cdr datum)))]
+       
+       ;; while expressions
+       [(equal? (1st datum) 'while)
+	(while-exp (parse-exp (2nd datum)) (map parse-exp (cddr datum)))]
+       
+       ;; case expression
+       [(equal? (1st datum) 'case)
+	(let* ([key (parse-exp (2nd datum))] 
+	       [has-else (exp-has-else (cddr datum))]
+	       [keys-and-exps (if has-else
+				  (all-but-last (cddr datum))
+				  (cddr datum))]
+	       [keys (list (parse-exp (list 'quote(map 1st keys-and-exps))))]
+	       [bodies (map parse-exp (map 2nd keys-and-exps))]
+	       [return (if has-else
+			   (case-exp key keys bodies (parse-exp (2nd (last (cddr datum)))))
+			   (case-no-else-exp key keys bodies))])
+	  return)]
        
        ;; lambda expressions
        [(eqv? (1st datum) 'lambda)
@@ -286,17 +286,17 @@
 	 
 	 ;; Check for non-symbols in arg list
 	 [(and (list? (2nd datum))
-		   (not (null? (2nd datum)))
-		   (not (andmap symbol? (2nd datum))))
+	       (not (null? (2nd datum)))
+	       (not (andmap symbol? (2nd datum))))
 	  (eopl:error 'parse-exp "fixed lambda's formal arguments ~s must all be symbols" datum)]
-	[(and (pair? (2nd datum))
-	      (improper? (2nd datum))
-	      (not (let ([fixed (get-fixed (2nd datum))] [variable (get-variable (2nd datum))])
-		     (and (andmap symbol? fixed) (symbol? variable)))))
-	 (eopl:error 'parse-exp "improper lambda's formal arguments ~s must all be symbols" datum)]
-
-	[(and (not (symbol? (2nd datum))) (not (or (null? (2nd datum)) (pair? (2nd datum)))))
-	 (eopl:error 'parse-exp "variable lambda's formal arguments ~s must all be symbols" datum)]
+	 [(and (pair? (2nd datum))
+	       (improper? (2nd datum))
+	       (not (let ([fixed (get-fixed (2nd datum))] [variable (get-variable (2nd datum))])
+		      (and (andmap symbol? fixed) (symbol? variable)))))
+	  (eopl:error 'parse-exp "improper lambda's formal arguments ~s must all be symbols" datum)]
+	 
+	 [(and (not (symbol? (2nd datum))) (not (or (null? (2nd datum)) (pair? (2nd datum)))))
+	  (eopl:error 'parse-exp "variable lambda's formal arguments ~s must all be symbols" datum)]
 	 
 	 
 	 ;; Correct types of lambdas
@@ -359,36 +359,29 @@
 							(symbol? (car declaration)))
 						      (3rd datum))))
 	  (eopl:error 'parse-exp "vars in ~s-exp must be symbols ~s" datum)]
-	 
+	 ;; Correct named-let syntax expansion
 	 [else
-
-	  (if (null? (3rd datum))
-	  	  (letrec-exp (list (2nd datum))
-	  	  			  '()
-	  	  			  '()
-	  	  			  (list (map parse-exp (cdddr datum)))
-	  	  			  (list (parse-exp (list (2nd datum)))))
-	      (letrec-exp (list (2nd datum)) 
-	      			  (list (map 1st (3rd datum))) 
-	      			  '(())
-	      			  (list (map parse-exp (cdddr datum))) 
-	  				  (list (parse-exp (cons (2nd datum) 
-	  				  			(map 2nd (3rd datum)))))))])]
-	      
+	  (letrec-exp (list (2nd datum)) 
+		      (list (map 1st (3rd datum)))
+		      '(())
+		      (list (map parse-exp (cdddr datum)))
+		      (list (parse-exp (cons (2nd datum) 
+						 (map 2nd (3rd datum))))))])]
+       
        
        ;; let expressions
        [(eqv? (1st datum) 'let)
 	(begin
 	  (check-let datum)
-	   (if (null? (2nd datum))
-			     (let-exp
-			      '()
-			      '()
-			      (map parse-exp (cddr datum)))
-			     (let-exp
-			      (map 1st (2nd datum))
-			      (map parse-exp (map 2nd (2nd datum)))
-			      (map parse-exp (cddr datum)))))]
+	  (if (null? (2nd datum))
+	      (let-exp
+	       '()
+	       '()
+	       (map parse-exp (cddr datum)))
+	      (let-exp
+	       (map 1st (2nd datum))
+	       (map parse-exp (map 2nd (2nd datum)))
+	       (map parse-exp (cddr datum)))))]
        
        ;; let* expressions
        [(eqv? (1st datum) 'let*)
@@ -418,28 +411,28 @@
 	      (letrec-exp
 	       (map 1st (2nd datum))
 	       (map (lambda (lambda-exp)
-	       			(cond
-	       				[(symbol? (2nd lambda-exp))
-	       					'()]
-	       				[(and (not (null? (2nd lambda-exp))) 
-	       					  (improper? (2nd lambda-exp)))
-	       					(get-fixed (2nd lambda-exp))]
-	       				[else
-	       					(2nd lambda-exp)]))
-	       	 	(map 2nd (2nd datum)))
+		      (cond
+		       [(symbol? (2nd lambda-exp))
+			'()]
+		       [(and (not (null? (2nd lambda-exp))) 
+			     (improper? (2nd lambda-exp)))
+			(get-fixed (2nd lambda-exp))]
+		       [else
+			(2nd lambda-exp)]))
+		    (map 2nd (2nd datum)))
 	       (map (lambda (lambda-exp)
-	       			(cond
-	       				[(symbol? (2nd lambda-exp))
-	       					(list (2nd lambda-exp))]
-	       				[(and (not (null? (2nd lambda-exp))) 
-	       					  (improper? (2nd lambda-exp)))
-	       					(list (get-variable (2nd lambda-exp)))]
-	       				[else
-	       					'()]))
-	       	 	(map 2nd (2nd datum)))
+		      (cond
+		       [(symbol? (2nd lambda-exp))
+			(list (2nd lambda-exp))]
+		       [(and (not (null? (2nd lambda-exp))) 
+			     (improper? (2nd lambda-exp)))
+			(list (get-variable (2nd lambda-exp)))]
+		       [else
+			'()]))
+		    (map 2nd (2nd datum)))
 	       (map (lambda (ls-exp) 
-	       			(map parse-exp ls-exp))
-	       		 (map cddr (map 2nd (2nd datum))))
+		      (map parse-exp ls-exp))
+		    (map cddr (map 2nd (2nd datum))))
 	       (map parse-exp (cddr datum)))))]
        
        ;; set! expressions
@@ -460,7 +453,7 @@
 	 [else
 	  (app-exp (parse-exp (1st datum))
 		   (map parse-exp (cdr datum)))])])]
-
+     
      ;; improper syntax
      [else (eopl:error 'parse-exp "bad expression: ~s" datum)])))
 
@@ -512,9 +505,9 @@
     (empty-env-record)))
 
 (define extend-env-recursively
-	(lambda (proc-names fixed-idss variable-idss bodiess old-env)
-	(recursively-extended-env-record
-	proc-names fixed-idss variable-idss bodiess old-env)))
+  (lambda (proc-names fixed-idss variable-idss bodiess old-env)
+    (recursively-extended-env-record
+     proc-names fixed-idss variable-idss bodiess old-env)))
 
 (define extend-env
   (lambda (syms vals env)
@@ -545,28 +538,26 @@
 				      (succeed (list-ref vals pos))
 				      (apply-env env sym succeed fail)))]
 	   [recursively-extended-env-record
-			(proc-names fixed-idss variable-idss bodiess old-env)
-			(let ([pos
-				(list-find-position sym proc-names)])
-				(if (number? pos)
-					(let ([fixed-vars (list-ref fixed-idss pos)]
-						  [variable-vars (list-ref variable-idss pos)]
-						  [bodies (list-ref bodiess pos)])
-						(cond
-							[(and (null? fixed-vars) 
-								  (not (null? variable-vars)))
-								(variable-closure (car variable-vars) bodies env)]
-							[(and (not (null? fixed-vars))
-								  (not (null? variable-vars)))
-								(improper-closure fixed-vars (car variable-vars) bodies env)]
-							[else
-								(closure fixed-vars
-									bodies
-									env)]))
-			(apply-env old-env sym succeed fail)))])))
-
-
-
+	    (proc-names fixed-idss variable-idss bodiess old-env)
+	    (let ([pos
+		   (list-find-position sym proc-names)])
+	      (if (number? pos)
+		  (begin
+		  (let ([fixed-vars (list-ref fixed-idss pos)]
+			[variable-vars (list-ref variable-idss pos)]
+			[bodies (list-ref bodiess pos)])
+		    (cond
+		     [(and (null? fixed-vars) 
+			   (not (null? variable-vars)))
+		      (variable-closure (car variable-vars) bodies env)]
+		     [(and (not (null? fixed-vars))
+			   (not (null? variable-vars)))
+		      (improper-closure fixed-vars (car variable-vars) bodies env)]
+		     [else
+		      (closure fixed-vars
+			       bodies
+			       env)])))
+		  (apply-env old-env sym succeed fail)))])))
 
 ;-----------------------+
 ;                       |
@@ -575,49 +566,49 @@
 ;-----------------------+
 
 (define syntax-expand
-	(let ([identity-proc (lambda (x) x)])
-	  (lambda (exp)
-	    (cases expression exp
-		    [let-exp (vars exps bodies)
-			    (app-exp (lambda-fixed-exp vars
-			    				  (map syntax-expand bodies))
-			    		  (map syntax-expand exps))]
-			[letrec-exp (proc-names fixed-idss variable-idss bodiess letrec-bodies)
-				(identity-proc exp)]
-			[lit-exp (datum) exp]
-	        [var-exp (id) (identity-proc exp)]
-	        [if-exp (test-exp then-exp else-exp)
-		        (identity-proc exp)]
-	        [if-onlythen-exp (test-exp then-exp)
-		        (identity-proc exp)]
-	        [lambda-fixed-exp (vars bodies)
-			    	(identity-proc exp)]
-	        [lambda-improper-exp (vars var bodies)
-						(identity-proc exp)]
-	        [lambda-variable-exp (var bodies)
-						(identity-proc exp)]
-	        [app-exp (rator rands)
-		        (identity-proc exp)]
-		    [and-exp (args)
-		      	(identity-proc exp)]
-		    [or-exp (args)
-		      	(identity-proc exp)]
-		    [cond-exp (conditions exps else-exp)
-		     		(identity-proc exp)]
-		    [cond-no-else-exp (conditions exps)
-		     		(identity-proc exp)]
-	     	[let*-exp (vars exps bodies)
-	     		(syntax-expand (let let*-expand ([vars vars] [exps exps])
-	     			(let-exp (list (car vars)) (list (syntax-expand (car exps)))
-	     				(if (null? (cdr vars))
-	     					(map syntax-expand bodies)
-	     					(list (let*-expand (cdr vars) (cdr exps)))))))]
-	     	[begin-exp (exps) (identity-proc exp)]
-	     	[while-exp (test-exp bodies) (identity-proc exp)]
-	     	[case-exp (key keys bodies else-exp) (identity-proc exp)]
-	     	[case-no-else-exp (key keys bodies) (identity-proc exp)]
-			[else (error 'syntax-expand
-				  "Bad parsed expression: ~a" exp)]))))
+  (let ([identity-proc (lambda (x) x)])
+    (lambda (exp)
+      (cases expression exp
+	     [let-exp (vars exps bodies)
+		      (app-exp (lambda-fixed-exp vars
+						 (map syntax-expand bodies))
+			       (map syntax-expand exps))]
+	     [letrec-exp (proc-names fixed-idss variable-idss bodiess letrec-bodies)
+			 (identity-proc exp)]
+	     [lit-exp (datum) exp]
+	     [var-exp (id) (identity-proc exp)]
+	     [if-exp (test-exp then-exp else-exp)
+		     (identity-proc exp)]
+	     [if-onlythen-exp (test-exp then-exp)
+			      (identity-proc exp)]
+	     [lambda-fixed-exp (vars bodies)
+			       (identity-proc exp)]
+	     [lambda-improper-exp (vars var bodies)
+				  (identity-proc exp)]
+	     [lambda-variable-exp (var bodies)
+				  (identity-proc exp)]
+	     [app-exp (rator rands)
+		      (identity-proc exp)]
+	     [and-exp (args)
+		      (identity-proc exp)]
+	     [or-exp (args)
+		     (identity-proc exp)]
+	     [cond-exp (conditions exps else-exp)
+		       (identity-proc exp)]
+	     [cond-no-else-exp (conditions exps)
+			       (identity-proc exp)]
+	     [let*-exp (vars exps bodies)
+		       (syntax-expand (let let*-expand ([vars vars] [exps exps])
+					(let-exp (list (car vars)) (list (syntax-expand (car exps)))
+						 (if (null? (cdr vars))
+						     (map syntax-expand bodies)
+						     (list (let*-expand (cdr vars) (cdr exps)))))))]
+	     [begin-exp (exps) (identity-proc exp)]
+	     [while-exp (test-exp bodies) (identity-proc exp)]
+	     [case-exp (key keys bodies else-exp) (identity-proc exp)]
+	     [case-no-else-exp (key keys bodies) (identity-proc exp)]
+	     [else (error 'syntax-expand
+			  "Bad parsed expression: ~a" exp)]))))
 
 
 ;-------------------+
@@ -667,11 +658,11 @@
 						 (eval-rands exps env) 
 						 env)])
 			(eval-bodies bodies new-env))]
-		 [letrec-exp
-		 	(proc-names fixed-idss variable-idss bodiess letrec-bodies)
-		 	(eval-bodies letrec-bodies
-		 		(extend-env-recursively
-		 			proc-names fixed-idss variable-idss bodiess env))]
+	     [letrec-exp
+	      (proc-names fixed-idss variable-idss bodiess letrec-bodies)
+	      (eval-bodies letrec-bodies
+			   (extend-env-recursively
+			    proc-names fixed-idss variable-idss bodiess env))]
 	     [if-exp (test-exp then-exp else-exp)
 		     (if (eval-exp test-exp env)
 			 (eval-exp then-exp env)
@@ -690,61 +681,61 @@
 		      (let ([proc-value (eval-exp rator env)]
 			    [args (eval-rands rands env)])
 			(apply-proc proc-value args))]
-		   [cond-exp (conditions exps else-exp)
-		   	(let eval-cond ([conditions conditions] [exps exps])
-		   		(cond
-		   			[(null? conditions) (eval-exp else-exp env)]
-		   			[(eval-exp (1st conditions) env)
-		   				(eval-exp (1st exps) env)]
-		   			[else (eval-cond (cdr conditions) (cdr exps))]))]
-		   [cond-no-else-exp (conditions exps) 
-		   	(let eval-cond ([conditions conditions] [exps exps])
-		   		(cond
-		   			[(null? conditions) (void)]
-		   			[(eval-exp (1st conditions) env)
-		   				(eval-exp (1st exps) env)]
-		   			[else (eval-cond (cdr conditions) (cdr exps))]))]
-		   [and-exp (args)
-		   	(let eval-and ([args args])
-		   		(cond 
-		   			[(null? (cdr args)) (eval-exp (car args) env)]
-		   			[(not (eval-exp (car args) env)) #f]
-		   			[else
-		   				(eval-and (cdr args))]))]
-		   [or-exp (args)
-		   	(let eval-or ([args args])
-		   		(cond 
-		   			[(null? args) #f]
-		   			[(eval-exp (car args) env) (eval-exp (car args) env)]
-		   			[else 
-		   				(eval-or (cdr args))]))]
-		   [begin-exp (exps)
+	     [cond-exp (conditions exps else-exp)
+		       (let eval-cond ([conditions conditions] [exps exps])
+			 (cond
+			  [(null? conditions) (eval-exp else-exp env)]
+			  [(eval-exp (1st conditions) env)
+			   (eval-exp (1st exps) env)]
+			  [else (eval-cond (cdr conditions) (cdr exps))]))]
+	     [cond-no-else-exp (conditions exps) 
+			       (let eval-cond ([conditions conditions] [exps exps])
+				 (cond
+				  [(null? conditions) (void)]
+				  [(eval-exp (1st conditions) env)
+				   (eval-exp (1st exps) env)]
+				  [else (eval-cond (cdr conditions) (cdr exps))]))]
+	     [and-exp (args)
+		      (let eval-and ([args args])
+			(cond 
+			 [(null? (cdr args)) (eval-exp (car args) env)]
+			 [(not (eval-exp (car args) env)) #f]
+			 [else
+			  (eval-and (cdr args))]))]
+	     [or-exp (args)
+		     (let eval-or ([args args])
+		       (cond 
+			[(null? args) #f]
+			[(eval-exp (car args) env) (eval-exp (car args) env)]
+			[else 
+			 (eval-or (cdr args))]))]
+	     [begin-exp (exps)
 		   	(eval-bodies exps env)]
-		   [while-exp (test-exp bodies)
+	     [while-exp (test-exp bodies)
 		   	(let while-loop ()
-			   	(if (eval-exp test-exp env)
-			   		(begin
-			   			(eval-bodies bodies env)
-			   			(while-loop))
-			   		(void)))]
-		   [case-exp (key keys bodies else-exp)
-		   	(let case-eval ([key (eval-exp key env)] [keys (eval-exp (1st keys) env)] [bodies bodies])
-		   		(cond
-		   			[(null? keys) 
-		   				(eval-exp else-exp env)]
-		   			[(member key (1st keys))
-		   				(eval-exp (car bodies) env)]
-		   			[else 
-		   				(case-eval key (cdr keys) (cdr bodies))]))]
-		   [case-no-else-exp (key keys bodies)
-		   	(let case-no-else-eval ([key (eval-exp key env)] [keys (eval-exp (1st keys) env)] [bodies bodies])
-		   		(cond
-		   			[(null? keys) 
-		   				(void)]
-		   			[(member key (1st keys))
-		   				(eval-exp (car bodies) env)]
-		   			[else 
-		   				(case-no-else-eval key (cdr keys) (cdr bodies))]))]
+			  (if (eval-exp test-exp env)
+			      (begin
+				(eval-bodies bodies env)
+				(while-loop))
+			      (void)))]
+	     [case-exp (key keys bodies else-exp)
+		       (let case-eval ([key (eval-exp key env)] [keys (eval-exp (1st keys) env)] [bodies bodies])
+			 (cond
+			  [(null? keys) 
+			   (eval-exp else-exp env)]
+			  [(member key (1st keys))
+			   (eval-exp (car bodies) env)]
+			  [else 
+			   (case-eval key (cdr keys) (cdr bodies))]))]
+	     [case-no-else-exp (key keys bodies)
+			       (let case-no-else-eval ([key (eval-exp key env)] [keys (eval-exp (1st keys) env)] [bodies bodies])
+				 (cond
+				  [(null? keys) 
+				   (void)]
+				  [(member key (1st keys))
+				   (eval-exp (car bodies) env)]
+				  [else 
+				   (case-no-else-eval key (cdr keys) (cdr bodies))]))]
 	     [else (error 'eval-exp
 			  "Bad abstract syntax: ~a" exp)]))))
 
@@ -760,10 +751,10 @@
 ;;  User-defined procedures will be added later.
 
 (define sanitize-args
-	(lambda (args len pos)
-		(if (= len pos)
-			(list (car args) (cdr args))
-			(cons (car args) (sanitize-args (cdr args) len (+ 1 pos))))))
+  (lambda (args len pos)
+    (if (= len pos)
+	(list (car args) (cdr args))
+	(cons (car args) (sanitize-args (cdr args) len (+ 1 pos))))))
 
 (define apply-proc
   (lambda (proc-value args)
@@ -775,12 +766,12 @@
 	   [improper-closure (vars var bodies env)
 			     (eval-bodies bodies
 					  (extend-env (append vars (list var)) 
-					  	(sanitize-args args (length vars) 1)
-					   env))] 
+						      (sanitize-args args (length vars) 1)
+						      env))] 
 	   [variable-closure (var bodies env)
 			     (eval-bodies bodies
 					  (extend-env (list var) (list args) env))]
-					; You will add other cases
+	   ;; You will add other cases
 	   [else (eopl:error 'apply-proc
 			     "Attempt to apply bad procedure: ~s" 
 			     proc-value)])))
@@ -807,7 +798,7 @@
 (define apply-prim-proc
   (lambda (prim-proc args)
     (case prim-proc
-    	[(void) (void)]
+      [(void) (void)]
       [(+) (apply + args)]
       [(-) (apply - args)]
       [(*) (apply * args)]
@@ -863,8 +854,8 @@
       [(map)
        (map (lambda (arg)
 	      (apply-proc (1st args) (list arg)))
-	      (2nd args))]
-      [(apply) (apply (eval (2nd (1st args))) (2nd args))]
+	    (2nd args))]
+      [(apply) (apply-proc (1st args) (2nd args))]
       [(append) (append (1st args) (2nd args))]
       [(list-tail) (list-tail (1st args) (2nd args))]
       [(=) (= (1st args) (2nd args))]

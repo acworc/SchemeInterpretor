@@ -91,7 +91,7 @@
 		     )]
           [answers 
             (list 
-	     (eval-one-exp '((lambda x (car x) (cdr x)) 'a 'b 'c)) ;; Not working
+	     (eval-one-exp '((lambda x (car x) (cdr x)) 'a 'b 'c))
 	     (eval-one-exp '((lambda (x y . z) 
 			       (cons (+ x y) (cdr z))) 
 			     5 4 3 2 1)) ;; Not working
