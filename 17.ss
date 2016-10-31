@@ -693,21 +693,21 @@
   	(cases expression form
     	[define-exp (id def-exp)
     		((lambda (gl-env)
-		 		(cases environment gl-env
-		 			[extended-env-record
-		 				(syms vals env)
-		 				(set! global-env
-		 					(extend-env
-		 						(cons id syms)
-		 						(cons (eval-exp def-exp (empty-env)) (map unbox vals))
-		 						env))]
-		 			[else (error 'define-exp
-		 						"incorrect environment ~s" gl-env)]))
-		 	global-env)]
-
-    	[else
-  	    	(eval-exp form (empty-env))])))
+		   (cases environment gl-env
+			  [extended-env-record
+			   (syms vals env)
+			   (set! global-env
+			     (extend-env
+			      (cons id syms)
+			      (cons (eval-exp def-exp (empty-env)) (map unbox vals))
+			      env))]
+			  [else (error 'define-exp
+				       "incorrect environment ~s" gl-env)]))
+		 global-env)]
 	
+    	[else
+	 (eval-exp form (empty-env))])))
+
 
 
 (define eval-bodies
@@ -718,7 +718,7 @@
 	  (eval-exp (car bodies) env)
 	  (eval-bodies (cdr bodies) env)))))
 
-					; eval-exp is the main component of the interpreter
+;; eval-exp is the main component of the interpreter
 
 (define eval-exp
   (let ([identity-proc (lambda (x) x)])
@@ -789,29 +789,29 @@
 	     [or-exp (args)
 		     (let eval-or ([args args])
 		     	(let* ([is-null? (null? args)]
-		     			 [next-exp (if is-null? 
-		     						#f
-		     					    (eval-exp (car args) env))])
-		       (cond 
-			[is-null? #f]
-			[next-exp next-exp]
-			[else 
-			 (eval-or (cdr args))])))]
+			       [next-exp (if is-null? 
+					     #f
+					     (eval-exp (car args) env))])
+			  (cond 
+			   [is-null? #f]
+			   [next-exp next-exp]
+			   [else 
+			    (eval-or (cdr args))])))]
 	     [begin-exp (exps)
 		   	(eval-bodies exps env)]
-		 [define-exp (id def-exp)
+	     [define-exp (id def-exp)
 		 	((lambda (gl-env)
-		 		(cases environment gl-env
-		 			[extended-env-record
-		 				(syms vals env)
+			   (cases environment gl-env
+				  [extended-env-record
+				   (syms vals env)
 		 				(set! global-env
-		 					(extend-env
+						  (extend-env
 		 						(cons id syms)
 		 						(cons (eval-exp def-exp (empty-env)) (map unbox vals))
 		 						env))]
-		 			[else (error 'define-exp
-		 						"incorrect environment ~s" gl-env)]))
-		 	global-env)]
+				  [else (error 'define-exp
+					       "incorrect environment ~s" gl-env)]))
+			 global-env)]
 		 [set!-exp (id set-exp)
 			(let* ([var-ref (apply-env-ref env 
 				 	id identity-proc 
@@ -864,7 +864,22 @@
 (define eval-rands
   (lambda (rands env)
     (map (lambda (e)
-	   (eval-exp e env)) rands)))
+	   (cases expression e
+		  [var-exp (id) (ref-of-id id env)]
+		  [else (eval-exp e env)]))
+	 rands)))
+
+(define ref-of-id
+  (lambda (id env)
+    (apply-env-ref env
+		   id
+		   (lambda (v) v)
+		   (lambda ()
+		     (apply-env-ref global-env
+				    id
+				    (lambda (v) v)
+				    (lambda ()
+				      (error 'ref-of-id "variable ~s isn't bound" id)))))))
 
 ;;  Apply a procedure to its arguments.
 ;;  At this point, we only have primitive procedures.  
@@ -882,19 +897,9 @@
 	   [prim-proc (op) (apply-prim-proc op args)]
 	   [closure (vars bodies env)
 		    (eval-bodies bodies 
-				 (extend-env vars 
-				 	(let loop ([vars vars]
-				 			   [args args])
-				 		(cond
-				 			[(null? vars) '()]
-				 			[(and (list? (1st vars))
-										  (= (length (1st vars)) 2)
-										  (equal? (1st (1st vars)) 'ref)
-										  (symbol? (2nd (1st vars))))
-				 				(cons (box (car args))
-				 					  (loop (cdr vars) (cdr args)))]
-				 			[else (cons (car args) (loop (cdr vars) (cdr args)))]))
-				  env))]
+				 (extend-env vars
+					    args
+					    env))]
 	   [improper-closure (vars var bodies env)
 			     (eval-bodies bodies
 					  (extend-env (append vars (list var)) 
