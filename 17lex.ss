@@ -77,14 +77,6 @@
 	ch
 	(last-helper (cdr ls) (car ls)))))
 
-(define valid-lambda-arg?
-	(lambda (arg)
-		(or (symbol? arg)
-			(and (list? arg)
-			(= (length arg) 2)
-			(equal? (1st arg) 'ref)
-			(symbol? (2nd arg))))))
-
 
 ;; parsed expression
 
@@ -95,11 +87,11 @@
    (var symbol?)
    (bodies (list-of expression?))]
   [lambda-improper-exp
-   (vars (list-of valid-lambda-arg?))
+   (vars (list-of symbol?))
    (var symbol?)
    (bodies (list-of expression?))]
   [lambda-fixed-exp
-   (vars (list-of valid-lambda-arg?))
+   (vars (list-of symbol?))
    (bodies (list-of expression?))]
   [app-exp
    (rator expression?)
@@ -114,11 +106,11 @@
    (test-exp expression?)
    (then-exp expression?)]
   [let-exp
-   (vars (list-of valid-lambda-arg?))
+   (vars (list-of symbol?))
    (exps (list-of expression?))
    (bodies (list-of expression?))]
   [let*-exp
-   (vars (list-of valid-lambda-arg?))
+   (vars (list-of symbol?))
    (exps (list-of expression?))
    (bodies (list-of expression?))]
   [letrec-exp
@@ -175,7 +167,7 @@
 (define-datatype environment environment?
   [empty-env-record]
   [extended-env-record
-   (syms (list-of valid-lambda-arg?))
+   (syms (list-of symbol?))
    (vals (list-of scheme-value?))
    (env environment?)]
   [recursively-extended-env-record
@@ -192,10 +184,10 @@
 (define-datatype proc-val proc-val?
   [prim-proc
    (name symbol?)]
-  [closure (vars (list-of valid-lambda-arg?))
+  [closure (vars (list-of symbol?))
            (bodies (list-of expression?))
            (env environment?)]
-  [improper-closure (vars (list-of valid-lambda-arg?))
+  [improper-closure (vars (list-of symbol?))
                     (var symbol?)
                     (bodies (list-of expression?))
                     (env environment?)]
@@ -302,12 +294,12 @@
 	 ;; Check for non-symbols in arg list
 	 [(and (list? (2nd datum))
 	       (not (null? (2nd datum)))
-	       (not (andmap valid-lambda-arg? (2nd datum))))
+	       (not (andmap symbol? (2nd datum))))
 	  (eopl:error 'parse-exp "fixed lambda's formal arguments ~s must all be symbols" datum)]
 	 [(and (pair? (2nd datum))
 	       (improper? (2nd datum))
 	       (not (let ([fixed (get-fixed (2nd datum))] [variable (get-variable (2nd datum))])
-		      (and (andmap valid-lambda-arg? fixed) (symbol? variable)))))
+		      (and (andmap symbol? fixed) (symbol? variable)))))
 	  (eopl:error 'parse-exp "improper lambda's formal arguments ~s must all be symbols" datum)]
 	 
 	 [(and (not (symbol? (2nd datum))) (not (or (null? (2nd datum)) (pair? (2nd datum)))))
@@ -371,7 +363,7 @@
 	 
 	 ;; vars in declaration not symbols
 	 [(and (not (null? (3rd datum))) (not (andmap (lambda (declaration)
-							(valid-lambda-arg? (car declaration)))
+							(symbol? (car declaration)))
 						      (3rd datum))))
 	  (eopl:error 'parse-exp "vars in ~s-exp must be symbols ~s" datum)]
 	 ;; Correct named-let syntax expansion
@@ -526,9 +518,10 @@
 
 (define extend-env
   (lambda (syms vals env)
-    (extended-env-record syms 
-    	(map box vals)
-        env)))
+    (extended-env-record syms (map (lambda (val)
+    								(if (box? val)
+    									val
+    									(box val))) vals) env)))
 
 (define list-find-position
   (lambda (sym los)
@@ -550,26 +543,10 @@
 	   [empty-env-record ()
 			     (fail)]
 	   [extended-env-record (syms vals env)
-				(let ((pos (let loop ([pos 0]
-									  [syms syms])
-								(cond 
-									[(null? syms) #f]
-									[(eq? (car syms) sym) pos]
-									[(and (list? (1st syms))
-										  (= (length (1st syms)) 2)
-										  (equal? (1st (1st syms)) 'ref)
-										  (symbol? (2nd (1st syms)))
-										  (equal? (2nd (1st syms)) sym))
-										pos]
-									[else (loop (+ 1 pos) (cdr syms))]))))
+				(let ((pos (list-find-position sym syms)))
 				  (if (number? pos)
-				  	  (let* ([var-name (list-ref syms pos)]
-				  	  		 [ref? (and (list? var-name)
-										  (= (length var-name) 2)
-										  (equal? (1st var-name) 'ref)
-										  (symbol? (2nd var-name)))])
-					      	(succeed (list-ref vals pos)))
-				      	(apply-env-ref env sym succeed fail)))]
+				      (succeed (list-ref vals pos))
+				      (apply-env-ref env sym succeed fail)))]
 	   [recursively-extended-env-record
 	    (proc-names fixed-idss variable-idss bodiess old-env)
 	    (let ([pos
@@ -693,21 +670,21 @@
   	(cases expression form
     	[define-exp (id def-exp)
     		((lambda (gl-env)
-		   (cases environment gl-env
-			  [extended-env-record
-			   (syms vals env)
-			   (set! global-env
-			     (extend-env
-			      (cons id syms)
-			      (cons (eval-exp def-exp (empty-env)) (map unbox vals))
-			      env))]
-			  [else (error 'define-exp
-				       "incorrect environment ~s" gl-env)]))
-		 global-env)]
-	
-    	[else
-	 (eval-exp form (empty-env))])))
+		 		(cases environment gl-env
+		 			[extended-env-record
+		 				(syms vals env)
+		 				(set! global-env
+		 					(extend-env
+		 						(cons id syms)
+		 						(cons (eval-exp def-exp (empty-env)) vals)
+		 						env))]
+		 			[else (error 'define-exp
+		 						"incorrect environment ~s" gl-env)]))
+		 	global-env)]
 
+    	[else
+  	    	(eval-exp form (empty-env))])))
+	
 
 
 (define eval-bodies
@@ -718,7 +695,7 @@
 	  (eval-exp (car bodies) env)
 	  (eval-bodies (cdr bodies) env)))))
 
-;; eval-exp is the main component of the interpreter
+					; eval-exp is the main component of the interpreter
 
 (define eval-exp
   (let ([identity-proc (lambda (x) x)])
@@ -789,43 +766,41 @@
 	     [or-exp (args)
 		     (let eval-or ([args args])
 		     	(let* ([is-null? (null? args)]
-			       [next-exp (if is-null? 
-					     #f
-					     (eval-exp (car args) env))])
-			  (cond 
-			   [is-null? #f]
-			   [next-exp next-exp]
-			   [else 
-			    (eval-or (cdr args))])))]
+		     			 [next-exp (if is-null? 
+		     						#f
+		     					    (eval-exp (car args) env))])
+		       (cond 
+			[is-null? #f]
+			[next-exp next-exp]
+			[else 
+			 (eval-or (cdr args))])))]
 	     [begin-exp (exps)
 		   	(eval-bodies exps env)]
-	     [define-exp (id def-exp)
+		 [define-exp (id def-exp)
 		 	((lambda (gl-env)
-			   (cases environment gl-env
-				  [extended-env-record
-				   (syms vals env)
+		 		(cases environment gl-env
+		 			[extended-env-record
+		 				(syms vals env)
 		 				(set! global-env
-						  (extend-env
+		 					(extend-env
 		 						(cons id syms)
-		 						(cons (eval-exp def-exp (empty-env)) (map unbox vals))
+		 						(cons (eval-exp def-exp (empty-env)) vals)
 		 						env))]
-				  [else (error 'define-exp
-					       "incorrect environment ~s" gl-env)]))
-			 global-env)]
+		 			[else (error 'define-exp
+		 						"incorrect environment ~s" gl-env)]))
+		 	global-env)]
 		 [set!-exp (id set-exp)
-			(let* ([id-ref (apply-env-ref env 
-				 	id identity-proc 
-		  			 (lambda () ; procedure to call if id is not in env
-							 (apply-env-ref global-env ; was init-env
-									    id
-		  								identity-proc ; call if id is in global-env
-		 							    (lambda () ; call if id not in global-env
-											(error 'apply-env
-		    									   "variable ~s is not bound"
-		       										id)))))]
-				  [id-val (unbox id-ref)]
-				  [set-val (eval-exp set-exp env)])
-					(set-ref! id-ref set-val))]
+		 	(set-ref! (apply-env-ref env 
+		 							 id identity-proc 
+					      			 (lambda () ; procedure to call if id is not in env
+				  						 (apply-env-ref global-env ; was init-env
+					    							    id
+					      								identity-proc ; call if id is in global-env
+					     							    (lambda () ; call if id not in global-env
+															(error 'apply-env
+						    									   "variable ~s is not bound"
+						       										id)))))
+		 			  (eval-exp set-exp env))]
 	     [while-exp (test-exp bodies)
 		   	(let while-loop ()
 			  (if (eval-exp test-exp env)
@@ -859,26 +834,7 @@
 (define eval-rands
   (lambda (rands env)
     (map (lambda (e)
-	   (cases expression e
-		  [var-exp (id)
-		  		(display (ref-of-id id env))
-		  		(newline)
-
-		  		(ref-of-id id env)]
-		  [else (eval-exp e env)]))
-	 rands)))
-
-(define ref-of-id
-  (lambda (id env)
-    (apply-env-ref env
-		   id
-		   (lambda (v) v)
-		   (lambda ()
-		     (apply-env-ref global-env
-				    id
-				    (lambda (v) v)
-				    (lambda ()
-				      (error 'ref-of-id "variable ~s isn't bound" id)))))))
+	   (eval-exp e env)) rands)))
 
 ;;  Apply a procedure to its arguments.
 ;;  At this point, we only have primitive procedures.  
@@ -896,15 +852,7 @@
 	   [prim-proc (op) (apply-prim-proc op args)]
 	   [closure (vars bodies env)
 		    (eval-bodies bodies 
-				 (extend-env vars
-					    (let args-loop ([args args] [vars vars])
-					    	(cond
-					    		[(null? args) '()]
-					    		[(and (pair? (1st vars)) (eq? (1st (1st vars)) 'ref)
-					    			  (box? (unbox (1st args))))
-					    		(cons (unbox (1st args)) (args-loop (cdr args) (cdr vars)))]
-					    		[else (cons (1st args) (args-loop (cdr args) (cdr vars)))]))
-					    env))]
+				 (extend-env vars args env))]
 	   [improper-closure (vars var bodies env)
 			     (eval-bodies bodies
 					  (extend-env (append vars (list var)) 
