@@ -662,6 +662,94 @@
 ;                   |
 ;-------------------+
 
+(define apply-k
+	(lambda (k val)
+		(cases continuation k
+			[test-k (then-exp else-exp env k)
+				 	(if val
+				 		(eval-exp then-exp env k)
+				 		(eval-exp else-exp env k))]
+			[rator-k (rands env k)
+					 (evail-rands rands
+					 			  env
+					 			  (rands-k val k))]
+			[rands-k (proc-value k)
+					 (apply-proc proc-value val k)]
+			[eval-car-k (cdr-bodies env k)
+					(if (null? (cdr cdr-bodies))
+						(eval-exp (car cdr-bodies) env k)
+						(eval-exp (car cdr-bodies) env
+							(eval-car-k (cdr cdr-bodies) env k)))]
+			[cond-k (cdr-conds exps env k)
+				(if val
+					(eval-exp (1st exps) env k)
+					(eval-cond cdr-conds
+							   (cdr exps)
+							   env
+							   k))]
+			[and-k (cdr-args env k)
+				(if (not val)
+					#f
+					(eval-and (cdr-args env k)))]
+			[or-k (cdr-args env k)
+				(if val
+					val
+					(eval-or (cdr-args env k)))]
+			[define-k (id syms vals env k)
+				(set! global-env
+		 					(extend-env
+		 						(cons id syms)
+		 						(cons val vals)
+		 						env))]
+			[set!-k (id env k)
+				(set-ref! (apply-env-ref env 
+		 							 id k 
+					      			 (lambda () ; procedure to call if id is not in env
+				  						 (apply-env-ref global-env ; was init-env
+					    							    id
+					      								k ; call if id is in global-env
+					     							    (lambda () ; call if id not in global-env
+															(error 'apply-env
+						    									   "variable ~s is not bound"
+						       										id)))))
+				val)]
+			[identity-k
+				val])))
+
+(define-datatype continuation continuation?
+	(test-k (then-exp expression?)
+			(else-exp expression?)
+			(env environment?)
+			(k continuation?))
+	(rator-k (rands (list-of expression?))
+			 (env environment?)
+			 (k continuation?))
+	(rands-k (proc-value proc-val?)
+			 (k continuation?))
+	(eval-car-k (cdr-bodies (list-of expression?))
+				(env environment?)
+				(k continuation?))
+	(cond-k (cdr-conds (list-of expression?))
+			(exps (list-of expression?))
+			(env environment?)
+			(k continuation?))
+	(and-k (cdr-args (list-of expression?))
+		   (env environment?)
+		   (k continuation?))
+	(or-k (cdr-args (list-of expression?))
+		   (env environment?)
+		   (k continuation?))
+	(define-k (id symbol?)
+			  (syms (list-of symbol?))
+			  (vals (list-of scheme-value?))
+			  (env environment?)
+			  (k continuation?))
+	(set!-k (id symbol?)
+			(env environment?)
+			(k continuation?))
+	(identity-k))
+
+
 ;; top-level-eval evaluates a form in the global environment
 
 
@@ -673,17 +761,14 @@
 		 		(cases environment gl-env
 		 			[extended-env-record
 		 				(syms vals env)
-		 				(set! global-env
-		 					(extend-env
-		 						(cons id syms)
-		 						(cons (eval-exp def-exp (empty-env)) vals)
-		 						env))]
+		 				(eval-exp def-exp (empty-env)
+		 					(define-k id syms vals env k))]
 		 			[else (error 'define-exp
 		 						"incorrect environment ~s" gl-env)]))
 		 	global-env)]
 
     	[else
-  	    	(eval-exp form (empty-env))])))
+  	    	(eval-exp form (empty-env) (identity-k))])))
 	
 
 
@@ -695,112 +780,115 @@
 	  (eval-exp (car bodies) env)
 	  (eval-bodies (cdr bodies) env)))))
 
+(define eval-bodies-cps
+	(lambda (bodies env k)
+		(if (null? (cdr bodies))
+			(eval-exp (car bodies) env k)
+			(eval-bodies-cps (car bodies) env
+				(eval-car-k (cdr bodies) env k)))))
+
+(define eval-cond
+	(lambda (conds exps else-exp env k)
+		(if (null? conds)
+			(eval-exp else-exp env k)
+			(cond-k (cdr conds)
+					exps
+					env
+					k))))
+
+(define eval-and
+	(lambda (args env k)
+		(if (null? (cdr args))
+			(eval-exp (1st args) env k)
+			(eval-exp (1st args) env
+				(and-k (cdr args) env k)))))
+
+(define eval-or
+	(lambda (args env k)
+		(if (null? (cdr args))
+			(eval-exp (1st args) env k)
+			(eval-exp (1st args) env
+				(or-k (cdr args) env k)))))
+
+; (define eval-case
+; 	(lambda (key keys bodies else-exp env k)
+; 		(if (null? keys)
+; 			(eval-exp else-exp env k)
+; 			(member-cps 
+
 					; eval-exp is the main component of the interpreter
 
 (define eval-exp
   (let ([identity-proc (lambda (x) x)])
-    (lambda (exp env)
+    (lambda (exp env k)
       (cases expression exp
-	     [lit-exp (datum) datum]
+	     [lit-exp (datum) (apply-k k datum)]
 	     [var-exp (id) ; look up its value.
 		      (apply-env env
 				 id
-				 identity-proc ; procedure to call if id is in env
+				 k ; procedure to call if id is in env
 				 (lambda () ; procedure to call if id is not in env
 				   (apply-env-ref global-env ; was init-env
 					      id
-					      identity-proc ; call if id is in global-env
+					      k ; call if id is in global-env
 					      (lambda () ; call if id not in global-env
 						(error 'apply-env
 						       "variable ~s is not bound"
 						       id)))))]
-	     [let-exp (vars exps bodies)
-		      (let ([new-env (extend-env vars 
-						 (eval-rands exps env) 
-						 env)])
-			(eval-bodies bodies new-env))]
 	     [letrec-exp
 	      (proc-names fixed-idss variable-idss bodiess letrec-bodies)
-	      (eval-bodies letrec-bodies
+	      (eval-bodies-cps letrec-bodies
 			   (extend-env-recursively
-			    proc-names fixed-idss variable-idss bodiess env))]
+			    proc-names fixed-idss variable-idss bodiess env)k)]
 	     [if-exp (test-exp then-exp else-exp)
-		     (if (eval-exp test-exp env)
-			 (eval-exp then-exp env)
-			 (eval-exp else-exp env))]
+		     (eval-exp test-exp
+		     		   env
+		     		   (test-k 
+		     		   		then-exp
+		     		   		else-exp
+		     		   		env
+		     		   		k))]
 	     [if-onlythen-exp (test-exp then-exp)
-			      (if (eval-exp test-exp env)
-				  (eval-exp then-exp env)
-				  (void))]
+			      (eval-exp test-exp
+		     		   env
+		     		   (test-k 
+		     		   		then-exp
+		     		   		(void)
+		     		   		env
+		     		   		k))]
 	     [lambda-fixed-exp (vars bodies)
-			       (closure vars bodies env)]
+			       (apply-k k (closure vars bodies env))]
 	     [lambda-improper-exp (vars var bodies)
-				  (improper-closure vars var bodies env)]
+				  (apply-k k (improper-closure vars var bodies env))]
 	     [lambda-variable-exp (var bodies)
-				  (variable-closure var bodies env)]
+				  (apply-k k (variable-closure var bodies env))]
 	     [app-exp (rator rands)
-		      (let ([proc-value (eval-exp rator env)]
-			    [args (eval-rands rands env)])
-			(apply-proc proc-value args))]
+		      (eval-exp rator
+		      			env
+		      			(rator-k rands env k))]
 	     [cond-exp (conditions exps else-exp)
-		       (let eval-cond ([conditions conditions] [exps exps])
-			 (cond
-			  [(null? conditions) (eval-exp else-exp env)]
-			  [(eval-exp (1st conditions) env)
-			   (eval-exp (1st exps) env)]
-			  [else (eval-cond (cdr conditions) (cdr exps))]))]
+		       (eval-cond conditions exps else-exp env k)]
 	     [cond-no-else-exp (conditions exps) 
-			       (let eval-cond ([conditions conditions] [exps exps])
-				 (cond
-				  [(null? conditions) (void)]
-				  [(eval-exp (1st conditions) env)
-				   (eval-exp (1st exps) env)]
-				  [else (eval-cond (cdr conditions) (cdr exps))]))]
+			   (eval-cond conditions exp (void) env k)]
 	     [and-exp (args)
-		      (let eval-and ([args args])
-			(cond 
-			 [(null? (cdr args)) (eval-exp (car args) env)]
-			 [(not (eval-exp (car args) env)) #f]
-			 [else
-			  (eval-and (cdr args))]))]
+		      (eval-and args env k)]
 	     [or-exp (args)
-		     (let eval-or ([args args])
-		     	(let* ([is-null? (null? args)]
-		     			 [next-exp (if is-null? 
-		     						#f
-		     					    (eval-exp (car args) env))])
-		       (cond 
-			[is-null? #f]
-			[next-exp next-exp]
-			[else 
-			 (eval-or (cdr args))])))]
+		     (eval-or args env k)]
 	     [begin-exp (exps)
-		   	(eval-bodies exps env)]
+		   	(eval-bodies-cps exps env k)]
 		 [define-exp (id def-exp)
 		 	((lambda (gl-env)
 		 		(cases environment gl-env
 		 			[extended-env-record
 		 				(syms vals env)
-		 				(set! global-env
-		 					(extend-env
-		 						(cons id syms)
-		 						(cons (eval-exp def-exp (empty-env)) vals)
-		 						env))]
+		 				(eval-exp def-exp (empty-env)
+		 					(define-k id syms vals env k))]
 		 			[else (error 'define-exp
 		 						"incorrect environment ~s" gl-env)]))
 		 	global-env)]
 		 [set!-exp (id set-exp)
-		 	(set-ref! (apply-env-ref env 
-		 							 id identity-proc 
-					      			 (lambda () ; procedure to call if id is not in env
-				  						 (apply-env-ref global-env ; was init-env
-					    							    id
-					      								identity-proc ; call if id is in global-env
-					     							    (lambda () ; call if id not in global-env
-															(error 'apply-env
-						    									   "variable ~s is not bound"
-						       										id)))))
-		 			  (eval-exp set-exp env))]
+		 	(eval-exp set-exp env
+		 		(set!-k id env k))]
 	     [while-exp (test-exp bodies)
 		   	(let while-loop ()
 			  (if (eval-exp test-exp env)
@@ -869,7 +957,7 @@
 (define *prim-proc-names* '(+ - * / add1 sub1 cons = zero? not < >= <= > 
 			      car cdr list null? eq? equal? eqv? assq length list->vector list-tail
 			      list? pair? procedure? vector vector->list vector? vector-ref vector-set!
-			      number? symbol? quotient void display
+			      number? symbol? quotient void display newline
 			      caar cddr cadr cdar caaar caadr caddr cdddr cdaar cddar cadar cdadr
 			      set-car! set-cdr! map apply append))
 
@@ -944,7 +1032,7 @@
       [(set-cdr!) (set-cdr! (1st args) (2nd args))] 
       [(vector-set!) (vector-set! (1st args) (2nd args) (3rd args))]
       [(display) (apply display args)]
-      [(newline) (display "didn't know we needed this!")]
+      [(newline) (apply newline args)]
       [(map)
        (map (lambda (arg)
 	      (apply-proc (1st args) (list arg)))
