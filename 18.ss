@@ -556,7 +556,7 @@
 		  (let ([fixed-vars (list-ref fixed-idss pos)]
 			[variable-vars (list-ref variable-idss pos)]
 			[bodies (list-ref bodiess pos)])
-		    (box (cond
+		   (succeed (box (cond
 		     [(and (null? fixed-vars) 
 			   (not (null? variable-vars)))
 		      (variable-closure (car variable-vars) bodies env)]
@@ -566,7 +566,7 @@
 		     [else
 		      (closure fixed-vars
 			       bodies
-			       env)]))))
+			       env)])))))
 		  (apply-env-ref old-env sym succeed fail)))])))
 
 (define apply-env
