@@ -670,16 +670,24 @@
 				 		(eval-exp then-exp env k)
 				 		(eval-exp else-exp env k))]
 			[rator-k (rands env k)
-					 (evail-rands rands
+					 (eval-rands rands
 					 			  env
 					 			  (rands-k val k))]
 			[rands-k (proc-value k)
 					 (apply-proc proc-value val k)]
 			[eval-car-k (cdr-bodies env k)
-					(if (null? (cdr cdr-bodies))
-						(eval-exp (car cdr-bodies) env k)
-						(eval-exp (car cdr-bodies) env
-							(eval-car-k (cdr cdr-bodies) env k)))]
+					(if (null? cdr-bodies)
+						(begin 
+							(display "THIS IS VALUE: ")
+							(display val)
+							(newline)
+						(apply-k k val))
+						(begin 
+							(display "THIS IS CDR-BODIES: ")
+							(display cdr-bodies)
+							(newline)
+						(eval-bodies-cps (cdr-bodies env
+							k))))]
 			[cond-k (cdr-conds exps env k)
 				(if val
 					(eval-exp (1st exps) env k)
@@ -696,24 +704,31 @@
 					val
 					(eval-or (cdr-args env k)))]
 			[define-k (id syms vals env k)
-				(set! global-env
+				(apply-k k (set! global-env
 		 					(extend-env
 		 						(cons id syms)
 		 						(cons val vals)
-		 						env))]
+		 						env)))]
 			[set!-k (id env k)
-				(set-ref! (apply-env-ref env 
-		 							 id k 
-					      			 (lambda () ; procedure to call if id is not in env
-				  						 (apply-env-ref global-env ; was init-env
-					    							    id
-					      								k ; call if id is in global-env
-					     							    (lambda () ; call if id not in global-env
-															(error 'apply-env
-						    									   "variable ~s is not bound"
-						       										id)))))
-				val)]
-			[identity-k
+				(apply-env-ref env 
+					 id 
+					 (lambda (result)
+					 	(apply-k k (set-ref! result val)))
+      			 	 (lambda () ; procedure to call if id is not in env
+						 (apply-env-ref global-env ; was init-env
+    							    id
+    							    (lambda (result)
+    							    	(apply-k k (set-ref! result val))) ; call if id is in global-env
+     							    (lambda () ; call if id not in global-env
+										(error 'apply-env-ref
+	    									   "variable ~s is not bound"
+	       										id)))))]
+			[map-cdr-k (car-L proc-cps k)
+				(proc-cps car-L
+					(map-car-k val k))]
+			[map-car-k (mapped-cdr k)
+				(apply-k k (cons val mapped-cdr))]
+			[init-k ()
 				val])))
 
 (define-datatype continuation continuation?
@@ -747,7 +762,12 @@
 	(set!-k (id symbol?)
 			(env environment?)
 			(k continuation?))
-	(identity-k))
+	(map-cdr-k (car-L expression?)
+			   (proc-cps procedure?)
+		  	   (k continuation?))
+	(map-car-k (mapped-cdr (list-of scheme-value?))
+		 	   (k continuation?))
+	(init-k))
 
 
 ;; top-level-eval evaluates a form in the global environment
@@ -768,24 +788,35 @@
 		 	global-env)]
 
     	[else
-  	    	(eval-exp form (empty-env) (identity-k))])))
+  	    	(eval-exp form (empty-env) (init-k))])))
 	
 
 
-(define eval-bodies
-  (lambda (bodies env)
-    (if (null? (cdr bodies))
-	(eval-exp (car bodies) env)
-	(begin
-	  (eval-exp (car bodies) env)
-	  (eval-bodies (cdr bodies) env)))))
+; (define eval-bodies
+;   (lambda (bodies env)
+;     (if (null? (cdr bodies))
+; 	(eval-exp (car bodies) env)
+; 	(begin
+; 	  (eval-exp (car bodies) env)
+; 	  (eval-bodies (cdr bodies) env)))))
 
 (define eval-bodies-cps
 	(lambda (bodies env k)
-		(if (null? (cdr bodies))
-			(eval-exp (car bodies) env k)
-			(eval-bodies-cps (car bodies) env
-				(eval-car-k (cdr bodies) env k)))))
+		(if (null? bodies)
+			(begin 
+							(display "THIS IS K: ")
+							(display k)
+							(newline)
+			(apply-k k '()))
+			(begin
+				(display "BODIES: ")
+				(display bodies)
+				(newline)
+				(display "THIS IS K: ")
+							(display k)
+							(newline)
+			(eval-exp (car bodies) env
+				(eval-car-k (cdr bodies) env k))))))
 
 (define eval-cond
 	(lambda (conds exps else-exp env k)
@@ -824,22 +855,31 @@
       (cases expression exp
 	     [lit-exp (datum) (apply-k k datum)]
 	     [var-exp (id) ; look up its value.
-		      (apply-env env
+		      (apply-env-ref env
 				 id
-				 k ; procedure to call if id is in env
+				 (lambda (result)
+				 	(apply-k k (deref result))) ; procedure to call if id is in env
 				 (lambda () ; procedure to call if id is not in env
 				   (apply-env-ref global-env ; was init-env
 					      id
-					      k ; call if id is in global-env
+					      (lambda (result)
+				 			(apply-k k (deref result))) ; call if id is in global-env
 					      (lambda () ; call if id not in global-env
 						(error 'apply-env
 						       "variable ~s is not bound"
 						       id)))))]
 	     [letrec-exp
 	      (proc-names fixed-idss variable-idss bodiess letrec-bodies)
+	      (display "evlauating letrec bodies")
+	      (newline)
+	      (display "letrec-bodies")
+	      (newline)
+	      (display letrec-bodies)
+	      (newline)
 	      (eval-bodies-cps letrec-bodies
 			   (extend-env-recursively
-			    proc-names fixed-idss variable-idss bodiess env)k)]
+			    proc-names fixed-idss variable-idss bodiess env)
+			    k)]
 	     [if-exp (test-exp then-exp else-exp)
 		     (eval-exp test-exp
 		     		   env
@@ -920,9 +960,16 @@
 ;; evaluate the list of operands, putting results into a list
 
 (define eval-rands
-  (lambda (rands env)
-    (map (lambda (e)
-	   (eval-exp e env)) rands)))
+  (lambda (rands env k)
+  	(map-cps (lambda (e k1) (eval-exp e env k1)) rands k)))
+
+(define map-cps
+	(lambda (proc-cps L k)
+		(if (null? L)
+			(apply-k k '())
+			(map-cps proc-cps (cdr L)
+				(map-cdr-k (car L) proc-cps k)))))
+
 
 ;;  Apply a procedure to its arguments.
 ;;  At this point, we only have primitive procedures.  
@@ -935,20 +982,20 @@
 	(cons (car args) (sanitize-args (cdr args) len (+ 1 pos))))))
 
 (define apply-proc
-  (lambda (proc-value args)
+  (lambda (proc-value args k)
     (cases proc-val proc-value
-	   [prim-proc (op) (apply-prim-proc op args)]
+	   [prim-proc (op) (apply-prim-proc op args k)]
 	   [closure (vars bodies env)
-		    (eval-bodies bodies 
-				 (extend-env vars args env))]
+		    (eval-bodies-cps bodies 
+				 (extend-env vars args env) k)]
 	   [improper-closure (vars var bodies env)
-			     (eval-bodies bodies
+			     (eval-bodies-cps bodies
 					  (extend-env (append vars (list var)) 
 						      (sanitize-args args (length vars) 1)
-						      env))] 
+						      env) k)] 
 	   [variable-closure (var bodies env)
-			     (eval-bodies bodies
-					  (extend-env (list var) (list args) env))]
+			     (eval-bodies-cps bodies
+					  (extend-env (list var) (list args) env) k)]
 	   ;; You will add other cases
 	   [else (eopl:error 'apply-proc
 			     "Attempt to apply bad procedure: ~s" 
@@ -978,7 +1025,8 @@
 ;; built-in procedure individually.  We are "cheating" a little bit.
 
 (define apply-prim-proc
-  (lambda (prim-proc args)
+  (lambda (prim-proc args k)
+  	(apply-k k 
     (case prim-proc
       [(void) (void)]
       [(+) (apply + args)]
@@ -1035,15 +1083,15 @@
       [(newline) (apply newline args)]
       [(map)
        (map (lambda (arg)
-	      (apply-proc (1st args) (list arg)))
+	      (apply-proc (1st args) (list arg) k))
 	    (2nd args))]
-      [(apply) (apply-proc (1st args) (2nd args))]
+      [(apply) (apply-proc (1st args) (2nd args) k)]
       [(append) (append (1st args) (2nd args))]
       [(list-tail) (list-tail (1st args) (2nd args))]
       [(=) (= (1st args) (2nd args))]
       [else (error 'apply-prim-proc 
 		   "Bad primitive procedure name: ~s" 
-		   prim-proc)])))
+		   prim-proc)]))))
 
 (define rep      ; "read-eval-print" loop.
   (lambda ()
