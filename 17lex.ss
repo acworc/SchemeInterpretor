@@ -884,7 +884,9 @@
 (define global-env (init-env))
 
 (define reset-global-env
-	(lambda () (set! global-env (init-env))))
+  (lambda () (set! global-env (init-env))))
+
+;; I wish I had finished this ish at least a little
 
 ;; Usually an interpreter must define each 
 ;; built-in procedure individually.  We are "cheating" a little bit.
