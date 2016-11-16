@@ -1,2 +1,3 @@
 # Sampcr-Merreltc
-CSSE304 Interpretor
+Chez Scheme Interpretor
+Based in Chez Scheme
